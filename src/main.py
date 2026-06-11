@@ -44,16 +44,28 @@ def build_rows_for_document(document: PdfDocument) -> List[CurriculumRow]:
     rows: List[CurriculumRow] = []
 
     class_label = document.class_label or infer_class_label_from_text(document.text)
+    current_class = class_label
 
     for section in sections:
+        # Check if this section indicates a class change
+        combined = f"{section.title}\n{section.content[:1000]}".lower()
+        if "class xii" in combined or "class-xii" in combined or "class 12" in combined or "class-12" in combined or "classxii" in combined:
+            current_class = "12"
+        elif "class xi" in combined or "class-xi" in combined or "class 11" in combined or "class-11" in combined or "classxi" in combined:
+            current_class = "11"
+        elif "class x" in combined or "class-x" in combined or "class 10" in combined or "class-10" in combined or "classx" in combined:
+            current_class = "10"
+        elif "class ix" in combined or "class-ix" in combined or "class 9" in combined or "class-9" in combined or "classix" in combined:
+            current_class = "9"
+
         chapter_title = normalize_chapter_title(section.title)
         if not is_valid_chapter_title(chapter_title):
             logging.debug("Skipping invalid chapter: %s", section.title)
             continue
-        analysis = analyze_chapter(chapter_title, section.content, document.subject, class_label)
+        analysis = analyze_chapter(chapter_title, section.content, document.subject, current_class)
         rows.append(
             CurriculumRow(
-                class_label=class_label,
+                class_label=current_class,
                 subject=document.subject,
                 chapter=chapter_title,
                 core_concept=analysis.core_concept,

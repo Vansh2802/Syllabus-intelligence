@@ -94,7 +94,15 @@ def normalize_class_token(token: str) -> str:
 
     cleaned = re.sub(r"[^a-z0-9]+", "", token.lower())
     if cleaned in {"engineering", "aicte", "btech", "ug"}:
-        return "Engineering"
+        return "Engineering Year 1"
+    if "firstyear" in cleaned or "first" in cleaned:
+        return "Engineering Year 1"
+    if "sem3" in cleaned or "sem4" in cleaned:
+        return "Engineering Year 2"
+    if "sem5" in cleaned or "sem6" in cleaned:
+        return "Engineering Year 3"
+    if "sem7" in cleaned or "sem8" in cleaned:
+        return "Engineering Year 4"
     if cleaned in CLASS_ALIASES:
         return CLASS_ALIASES[cleaned]
     if cleaned.isdigit() and 1 <= int(cleaned) <= 12:
@@ -107,7 +115,13 @@ def infer_engineering_label_from_text(text: str) -> str:
 
     sample = text[:6000].lower()
     if re.search(r"\b(aicte|all india council for technical education|engineering curriculum|b\.?\s*tech)\b", sample):
-        return "Engineering"
+        return "Engineering Year 1"
+    if "sem 3" in sample or "sem-3" in sample or "semester 3" in sample or "semester iii" in sample or "sem 4" in sample:
+        return "Engineering Year 2"
+    if "sem 5" in sample or "sem-5" in sample or "semester 5" in sample or "semester v" in sample or "sem 6" in sample:
+        return "Engineering Year 3"
+    if "sem 7" in sample or "sem-7" in sample or "semester 7" in sample or "semester vii" in sample or "sem 8" in sample:
+        return "Engineering Year 4"
     return ""
 
 
@@ -157,12 +171,46 @@ def infer_subject_from_text(text: str) -> str:
 def parse_filename_metadata(filename: str) -> Tuple[str, str]:
     """Extract class and subject metadata from a filename when possible."""
 
-    stem = Path(filename).stem
-    if re.search(r"\b(aicte|engineering|btech|b\.tech|ug_syllabus)\b", stem, flags=re.IGNORECASE):
-        _, subject = _parse_school_filename_metadata(stem)
-        return "Engineering", subject
+    stem = Path(filename).stem.lower()
+    
+    # Class detection
+    class_label = ""
+    if "btech first" in stem or "btech_first" in stem or "first year" in stem or "first_year" in stem or "btech first year" in stem or "btech" in stem:
+        class_label = "Engineering Year 1"
+    elif "sem3" in stem or "sem4" in stem or "sem_3" in stem or "sem_4" in stem:
+        class_label = "Engineering Year 2"
+    elif "sem5" in stem or "sem6" in stem or "sem_5" in stem or "sem_6" in stem:
+        class_label = "Engineering Year 3"
+    elif "sem7" in stem or "sem8" in stem or "sem_7" in stem or "sem_8" in stem:
+        class_label = "Engineering Year 4"
+    else:
+        class_label, _ = _parse_school_filename_metadata(stem)
 
-    return _parse_school_filename_metadata(stem)
+    # Subject detection
+    subject = ""
+    for alias, mapped in ORDERED_SUBJECT_ALIASES:
+        alias_clean = _normalize_lookup_token(alias)
+        if alias_clean in stem:
+            subject = mapped
+            break
+
+    if not subject:
+        if "math" in stem:
+            subject = "Mathematics"
+        elif "chem" in stem:
+            subject = "Chemistry"
+        elif "phys" in stem:
+            subject = "Physics"
+        elif "science" in stem:
+            subject = "Science"
+        elif "social" in stem or "sst" in stem:
+            subject = "Social Science"
+        elif "sem" in stem or "btech" in stem:
+            subject = "Engineering"
+        else:
+            _, subject = _parse_school_filename_metadata(stem)
+
+    return class_label, subject
 
 
 def _parse_school_filename_metadata(stem: str) -> Tuple[str, str]:

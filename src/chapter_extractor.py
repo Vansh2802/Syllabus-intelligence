@@ -156,7 +156,6 @@ INVALID_TITLE_PATTERNS = (
     r"\b(theory|practical|guidelines?|note|evaluation|assessment|instructions?|annexure|appendix|examination|marking scheme|question paper design|learning outcomes|project work)\b",
     r"\b(student|students)\s+will\s+be\s+able\s+to\b",
     r"\b(course structure|curricular goals?|competencies|prescribed books|contents?|table of contents)\b",
-    r"\bclass\s*[–-]?\s*(ix|x|xi|xii|9|10|11|12)\b",
     r"\bsubject\s*code\b",
     r"\b(action of|present and|by making|at point of|find the|the student will|grand total|typology of questions|kept in|theme\b|portfolio|learning outcomes|subject enrichment)\b",
     r"^c[\s\-]?\d+(?:\.\d+)?\b",
@@ -468,7 +467,7 @@ def _split_by_headings(text: str) -> List[ChapterSection]:
 
 def _split_by_toc(document: PdfDocument) -> List[ChapterSection]:
     sections: List[ChapterSection] = []
-    toc_entries = [(level, _clean_title(title), page) for level, title, page in document.toc_entries if level <= 3]
+    toc_entries = [(level, _clean_title(title), page) for level, title, page in document.toc_entries if level <= 6]
     toc_entries = [(level, title, page) for level, title, page in toc_entries if title and not _is_boilerplate_title(title)]
     if not toc_entries:
         return []
@@ -480,7 +479,8 @@ def _split_by_toc(document: PdfDocument) -> List[ChapterSection]:
             continue
 
         start_page = max(page - 1, 0)
-        end_page = toc_entries[index + 1][2] - 1 if index + 1 < len(toc_entries) else len(document.page_texts)
+        next_page = toc_entries[index + 1][2] if index + 1 < len(toc_entries) else len(document.page_texts) + 1
+        end_page = max(next_page - 1, start_page + 1)
         content = "\n".join(document.page_texts[start_page:end_page]).strip()
         if len(content) < 25:
             continue
@@ -494,13 +494,21 @@ def _split_by_toc(document: PdfDocument) -> List[ChapterSection]:
 def extract_chapter_sections(document: PdfDocument) -> List[ChapterSection]:
     """Extract ordered chapter-like sections from a syllabus PDF."""
 
-    if document.toc_entries:
+    # For school files, prefer headings because CBSE TOCs are often incomplete or cover only practical guidelines.
+    is_school = any(term in document.path.name.lower() for term in ["sec", "srsec", "class", "math", "physics", "chemistry", "science", "social"])
+    
+    if document.toc_entries and not is_school:
         toc_sections = _split_by_toc(document)
-        if toc_sections:
+        if len(toc_sections) >= 5:
             return toc_sections
 
     if document.text.strip():
         return _split_by_headings(document.text)
+
+    if document.toc_entries:
+        toc_sections = _split_by_toc(document)
+        if toc_sections:
+            return toc_sections
 
     return [ChapterSection(title="General Curriculum", content="", section_type="document")]
 

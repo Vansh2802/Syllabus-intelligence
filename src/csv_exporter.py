@@ -13,15 +13,17 @@ import pandas as pd
 from curriculum_analyzer import ALLOWED_DIFFICULTIES, ALLOWED_SKILL_DOMAINS
 
 
-LEARNING_STAGES = ("Secondary School", "Higher Secondary", "Engineering")
+LEARNING_STAGES = ("Secondary School", "Higher Secondary", "Engineering Year 1", "Engineering Year 2", "Engineering Year 3", "Engineering Year 4")
 
 
 def derive_learning_stage(class_label: str) -> str:
     """Map a class label to its educational learning stage."""
 
     cleaned = str(class_label or "").strip()
+    if cleaned in {"Engineering Year 1", "Engineering Year 2", "Engineering Year 3", "Engineering Year 4"}:
+        return cleaned
     if cleaned.lower() == "engineering":
-        return "Engineering"
+        return "Engineering Year 1"
     if cleaned.isdigit():
         level = int(cleaned)
         if level <= 10:
@@ -54,7 +56,7 @@ CSV_HEADERS = [
     "Learning_Stage",
     "Summary",
 ]
-MAX_EXPORTED_ROWS = 120
+MAX_EXPORTED_ROWS = 1000
 MIN_EXPORTED_ROWS = 60
 
 INVALID_CLASS_VALUES = {"", "0", "none", "nan", "null", "unknown"}
@@ -108,6 +110,8 @@ def _normalize_text(value: object) -> str:
 
 def _is_valid_class(value: str) -> bool:
     cleaned = value.strip()
+    if cleaned in {"Engineering Year 1", "Engineering Year 2", "Engineering Year 3", "Engineering Year 4"}:
+        return True
     if cleaned.lower() == "engineering":
         return True
     return cleaned.isdigit() and 1 <= int(cleaned) <= 12
@@ -172,6 +176,10 @@ def _clean_frame(dataframe: pd.DataFrame) -> pd.DataFrame:
 
 
 def _row_quality_score(row: pd.Series) -> int:
+    class_val = str(row.get("Class", ""))
+    if "Engineering" in class_val:
+        return 5
+
     chapter = str(row.get("Chapter", "")).strip()
     core_concept = str(row.get("Core_Concept", "")).strip()
     summary = str(row.get("Summary", "")).strip()

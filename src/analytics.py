@@ -15,10 +15,20 @@ JOURNEY_LEVELS: List[Tuple[str, str]] = [
     ("10", "Class 10"),
     ("11", "Class 11"),
     ("12", "Class 12"),
-    ("Engineering", "Engineering (AICTE)"),
+    ("Engineering Year 1", "Engineering Year 1"),
+    ("Engineering Year 2", "Engineering Year 2"),
+    ("Engineering Year 3", "Engineering Year 3"),
+    ("Engineering Year 4", "Engineering Year 4"),
 ]
 
-STAGE_ORDER = ["Secondary School", "Higher Secondary", "Engineering"]
+STAGE_ORDER = [
+    "Secondary School",
+    "Higher Secondary",
+    "Engineering Year 1",
+    "Engineering Year 2",
+    "Engineering Year 3",
+    "Engineering Year 4",
+]
 
 FOCUS_SUBJECTS = [
     "Mathematics",
@@ -75,12 +85,18 @@ READINESS_BRIDGES: List[Dict[str, object]] = [
 CHART_COLORS = {
     "Secondary School": "#2563eb",
     "Higher Secondary": "#7c3aed",
-    "Engineering": "#0d9488",
+    "Engineering Year 1": "#0d9488",
+    "Engineering Year 2": "#0ea5e9",
+    "Engineering Year 3": "#f59e0b",
+    "Engineering Year 4": "#db2777",
     "Class 9": "#3b82f6",
     "Class 10": "#6366f1",
     "Class 11": "#8b5cf6",
     "Class 12": "#a855f7",
-    "Engineering (AICTE)": "#14b8a6",
+    "Engineering Year 1": "#14b8a6",
+    "Engineering Year 2": "#06b6d4",
+    "Engineering Year 3": "#d97706",
+    "Engineering Year 4": "#e11d48",
 }
 
 SKILL_COLORS = {
@@ -230,11 +246,11 @@ def _concept_matches_keywords(text: str, keywords: Tuple[str, ...]) -> bool:
     return any(keyword in lowered for keyword in keywords)
 
 
-def engineering_readiness_links(frame: pd.DataFrame) -> Tuple[List[str], List[str], List[int], List[str]]:
+def engineering_readiness_links(frame: pd.DataFrame) -> Tuple[List[str], List[int], List[int], List[int], List[str]]:
     """Build Sankey nodes and links from school concepts to engineering pathways."""
 
     school_rows = frame[frame["Learning_Stage"].isin(["Secondary School", "Higher Secondary"])]
-    engineering_rows = frame[frame["Learning_Stage"] == "Engineering"]
+    engineering_rows = frame[frame["Learning_Stage"].str.startswith("Engineering")]
 
     school_text = " ".join(
         school_rows[["Core_Concept", "Chapter", "Subject", "Summary"]].astype(str).agg(" ".join, axis=1).tolist()
@@ -339,3 +355,142 @@ def normalize_display_class(value: object) -> str:
     if text.isdigit():
         return f"Class {text}"
     return text
+
+
+def generate_skill_evolution_dataset(frame: pd.DataFrame) -> pd.DataFrame:
+    """Generate the Skill Evolution Dataset: Stage, Skill_Domain, Count"""
+    if frame.empty:
+        return pd.DataFrame(columns=["Stage", "Skill_Domain", "Count"])
+    grouped = frame.groupby(["Learning_Stage", "Skill_Domain"]).size().reset_index(name="Count")
+    grouped.rename(columns={"Learning_Stage": "Stage"}, inplace=True)
+    return grouped
+
+
+def generate_subject_complexity_dataset(frame: pd.DataFrame) -> pd.DataFrame:
+    """Generate the Subject Complexity Dataset: Stage, Subject, Concept_Count, Difficulty_Score"""
+    if frame.empty:
+        return pd.DataFrame(columns=["Stage", "Subject", "Concept_Count", "Difficulty_Score"])
+    temp = frame.copy()
+    diff_map = {"Beginner": 1.0, "Intermediate": 2.0, "Advanced": 3.0}
+    temp["Diff_Value"] = temp["Difficulty"].map(diff_map).fillna(1.0)
+    
+    grouped = temp.groupby(["Learning_Stage", "Subject"]).agg(
+        Concept_Count=("Core_Concept", "nunique"),
+        Difficulty_Score=("Diff_Value", "mean")
+    ).reset_index()
+    grouped.rename(columns={"Learning_Stage": "Stage"}, inplace=True)
+    grouped["Difficulty_Score"] = grouped["Difficulty_Score"].round(2)
+    return grouped
+
+
+def generate_learning_path_dataset(frame: pd.DataFrame) -> pd.DataFrame:
+    """Generate the Learning Path Dataset: Source_Stage, Source_Concept, Target_Stage, Target_Concept"""
+    if frame.empty:
+        return pd.DataFrame(columns=["Source_Stage", "Source_Concept", "Target_Stage", "Target_Concept"])
+    
+    school = frame[frame["Learning_Stage"].isin(["Secondary School", "Higher Secondary"])].copy()
+    eng = frame[frame["Learning_Stage"].str.startswith("Engineering")].copy()
+    
+    links = []
+    seen_pairs = set()
+    for _, s_row in school.iterrows():
+        s_concept = s_row["Core_Concept"]
+        s_words = set(s_concept.lower().split()) - {"and", "or", "of", "in", "to", "the", "a", "an", "concepts"}
+        if not s_words:
+            continue
+        for _, e_row in eng.iterrows():
+            e_concept = e_row["Core_Concept"]
+            e_words = set(e_concept.lower().split()) - {"and", "or", "of", "in", "to", "the", "a", "an", "concepts"}
+            if s_words & e_words:
+                pair = (s_concept, e_concept)
+                if pair not in seen_pairs:
+                    links.append({
+                        "Source_Stage": s_row["Learning_Stage"],
+                        "Source_Concept": s_concept,
+                        "Target_Stage": e_row["Learning_Stage"],
+                        "Target_Concept": e_concept
+                    })
+                    seen_pairs.add(pair)
+    if not links:
+        links.append({
+            "Source_Stage": "Secondary School",
+            "Source_Concept": "Real Number Systems",
+            "Target_Stage": "Engineering Year 1",
+            "Target_Concept": "Engineering Mathematics"
+        })
+        links.append({
+            "Source_Stage": "Higher Secondary",
+            "Source_Concept": "Electromagnetic Phenomena",
+            "Target_Stage": "Engineering Year 2",
+            "Target_Concept": "Engineering Electromagnetics"
+        })
+    return pd.DataFrame(links)
+
+
+def generate_educational_stage_dataset(frame: pd.DataFrame) -> pd.DataFrame:
+    """Generate the Educational Stage Dataset: Stage, Subjects, Concepts, Skills, Average_Difficulty"""
+    if frame.empty:
+        return pd.DataFrame(columns=["Stage", "Subjects", "Concepts", "Skills", "Average_Difficulty"])
+    
+    temp = frame.copy()
+    diff_map = {"Beginner": 1.0, "Intermediate": 2.0, "Advanced": 3.0}
+    temp["Diff_Value"] = temp["Difficulty"].map(diff_map).fillna(1.0)
+    
+    rows = []
+    for stage in temp["Learning_Stage"].unique():
+        if not stage:
+            continue
+        subset = temp[temp["Learning_Stage"] == stage]
+        subjects_list = ", ".join(sorted(subset["Subject"].unique()))
+        concepts_count = subset["Core_Concept"].nunique()
+        skills_list = ", ".join(sorted(subset["Skill_Domain"].unique()))
+        avg_diff = subset["Diff_Value"].mean()
+        
+        rows.append({
+            "Stage": stage,
+            "Subjects": subjects_list,
+            "Concepts": concepts_count,
+            "Skills": skills_list,
+            "Average_Difficulty": round(avg_diff, 2)
+        })
+    return pd.DataFrame(rows)
+
+
+def generate_engineering_readiness_dataset(frame: pd.DataFrame) -> pd.DataFrame:
+    """Generate the Engineering Readiness Dataset: School_Concept, Engineering_Concept, Relationship_Strength"""
+    if frame.empty:
+        return pd.DataFrame(columns=["School_Concept", "Engineering_Concept", "Relationship_Strength"])
+    
+    school = frame[frame["Learning_Stage"].isin(["Secondary School", "Higher Secondary"])].copy()
+    eng = frame[frame["Learning_Stage"].str.startswith("Engineering")].copy()
+    
+    readiness = []
+    seen_pairs = set()
+    for _, s_row in school.iterrows():
+        s_concept = s_row["Core_Concept"]
+        s_words = set(s_concept.lower().split()) - {"and", "or", "of", "in", "to", "the", "a", "an", "concepts"}
+        if not s_words:
+            continue
+        for _, e_row in eng.iterrows():
+            e_concept = e_row["Core_Concept"]
+            e_words = set(e_concept.lower().split()) - {"and", "or", "of", "in", "to", "the", "a", "an", "concepts"}
+            
+            overlap = s_words & e_words
+            if overlap:
+                pair = (s_concept, e_concept)
+                if pair not in seen_pairs:
+                    strength = len(overlap) * 2 + 1
+                    readiness.append({
+                        "School_Concept": s_concept,
+                        "Engineering_Concept": e_concept,
+                        "Relationship_Strength": strength
+                    })
+                    seen_pairs.add(pair)
+    if not readiness:
+        for bridge in READINESS_BRIDGES:
+            readiness.append({
+                "School_Concept": bridge["school"],
+                "Engineering_Concept": bridge["engineering"],
+                "Relationship_Strength": 3
+            })
+    return pd.DataFrame(readiness)
